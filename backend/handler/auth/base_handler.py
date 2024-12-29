@@ -189,13 +189,13 @@ class OpenIDHandler:
         preferred_username = userinfo.get("preferred_username")
 
         user = db_user_handler.get_user_by_email(email)
-        
+
         if user is None:
-            # check if username with same username as oidc username exists
+            # check if oidc username matches with any existing RomM username
             user_by_username = db_user_handler.get_user_by_username(preferred_username)
 
-            # if oidc has existing username with no email, update user with oidc username
             if user_by_username is not None:
+                # if there's an existing username without an email, add oidc email
                 if not user_by_username.email:
                     log.info("User with username '%s' found, updating user with email found from odic '%s'", preferred_username, email)
                     db_user_handler.update_user(
@@ -206,12 +206,15 @@ class OpenIDHandler:
                     )
                     # fetch user again to return back
                     user = db_user_handler.get_user_by_email(email)
+                
+                # if there is an existing username and it's email does match the oidc email, then error out
                 elif user_by_username.email != email:
                     log.error("User with username '%s' found in RomM, but OIDC email '%s' does not match email '%s' in RomM. Please change email to match, or remove email from user", preferred_username, email, user_by_username.email)
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Username already exists with a different email.",
                     )
+            # create new user otherwise
             else:
                 log.info("User with email '%s' not found, creating new user", email)
                 user = User(
