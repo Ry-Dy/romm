@@ -189,16 +189,40 @@ class OpenIDHandler:
         preferred_username = userinfo.get("preferred_username")
 
         user = db_user_handler.get_user_by_email(email)
+        
         if user is None:
-            log.info("User with email '%s' not found, creating new user", email)
-            user = User(
-                username=preferred_username,
-                hashed_password=str(uuid.uuid4()),
-                email=email,
-                enabled=True,
-                role=Role.VIEWER,
-            )
-            db_user_handler.add_user(user)
+            # check if username with same username as oidc username exists
+            user_by_username = db_user_handler.get_user_by_username(preferred_username)
+
+            # if oidc has existing username with no email, update user with oidc username
+            if user_by_username is not None:
+                if not user_by_username.email:
+                    log.info("User with username '%s' found, updating user with email found from odic '%s'", preferred_username, email)
+                    db_user_handler.update_user(
+                        user_by_username.id,
+                        data={
+                            "email": email
+                        }
+                    )
+                    # fetch user again to return back
+                    user = db_user_handler.get_user_by_email(email)
+                elif user_by_username.email != email:
+                    log.error("User with username '%s' found in RomM, but OIDC email '%s' does not match email '%s' in RomM. Please change email to match, or remove email from user", preferred_username, email, user_by_username.email)
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Username already exists with a different email.",
+                    )
+            else:
+                log.info("User with email '%s' not found, creating new user", email)
+                user = User(
+                    username=preferred_username,
+                    hashed_password=str(uuid.uuid4()),
+                    email=email,
+                    enabled=True,
+                    role=Role.VIEWER,
+                )
+                db_user_handler.add_user(user)
+
 
         if not user.enabled:
             raise UserDisabledException
